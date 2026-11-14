@@ -4,6 +4,12 @@ import re
 from pathlib import Path
 
 from apt_index import records
+from deb_version import matches, version_key
+
+DEPENDENCY = re.compile(
+    r"\s*([a-z0-9][a-z0-9+.-]*)(?::[\w-]+)?"
+    r"\s*(?:\((<<|<=|=|>=|>>)\s*([^\s)]+)\))?"
+)
 
 
 def build_graph(package, dependencies):
@@ -39,15 +45,55 @@ def read_test_graph(path):
     return graph
 
 
-def dependency_names(record):
-    """Извлечь имена вариантов из обязательных зависимостей."""
+def requirements(record):
+    """Извлечь имена и ограничения версий обязательных зависимостей."""
     fields = (record.get("Pre-Depends", ""), record.get("Depends", ""))
-    names = {}
     for part in re.split(r"[,|]", ",".join(fields)):
-        match = re.match(r"\s*([a-z0-9][a-z0-9+.-]*)", part)
+        match = DEPENDENCY.match(part)
         if match:
-            names[match.group(1)] = None
-    return list(names)
+            yield match.groups()
+
+
+def compatible(index, requirement):
+    """Вернуть версии из индекса, которые удовлетворяют ограничению."""
+    name, relation, required = requirement
+    return [(name, version) for version in index.get(name, ())
+            if matches(version, relation, required)]
+
+
+def forward_edges(index, node):
+    """Выбрать старшую совместимую версию каждой зависимости."""
+    name, version = node
+    edges = []
+    for requirement in requirements(index.get(name, {}).get(version, {})):
+        child = requirement[0]
+        candidates = compatible(index, requirement)
+        if candidates:
+            edges.append(max(candidates, key=lambda item: version_key(item[1])))
+        elif child not in index:
+            edges.append((child, ""))
+    return edges
+
+
+def reverse_edges(index):
+    """Развернуть связи с учётом версий всех записей индекса."""
+    parents = {}
+    for name, versions in index.items():
+        for version, record in versions.items():
+            for requirement in requirements(record):
+                for child in compatible(index, requirement):
+                    parents.setdefault(child, []).append((name, version))
+    return parents
+
+
+def package_graph(graph):
+    """Объединить посещённые версии в вершины по именам пакетов."""
+    packages = {}
+    for (name, _), children in graph.items():
+        edges = packages.setdefault(name, {})
+        for child, _ in children:
+            edges[child] = None
+    return {name: list(edges) for name, edges in packages.items()}
 
 
 def reverse_graph(package, graph):
@@ -60,22 +106,19 @@ def reverse_graph(package, graph):
 
 
 def apt_graph(text, package, version, reverse=False):
-    """Построить граф с точной версией корня и первым совпадением потомков."""
+    """Обойти версии пакетов и представить результат по именам."""
     index = {}
-    selected = None
     for record in records(text):
         name = record.get("Package")
-        if name:
-            index.setdefault(name, record)
-        if name == package and record.get("Version") == version:
-            selected = record
-    if selected is None:
+        current = record.get("Version")
+        if name and current:
+            index.setdefault(name, {}).setdefault(current, record)
+    if version not in index.get(package, {}):
         raise ValueError(f"пакет {package} версии {version} не найден")
-    index[package] = selected
+    root = (package, version)
     if reverse:
-        graph = {name: dependency_names(record)
-                 for name, record in index.items()}
-        return reverse_graph(package, graph)
-    return build_graph(package, lambda node: dependency_names(
-        index.get(node, {})
-    ))
+        parents = reverse_edges(index)
+        graph = build_graph(root, lambda node: parents.get(node, []))
+        return package_graph(graph)
+    graph = build_graph(root, lambda node: forward_edges(index, node))
+    return package_graph(graph)

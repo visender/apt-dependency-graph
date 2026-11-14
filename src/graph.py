@@ -61,7 +61,7 @@ def apt_graph(text, package, version):
         if name == package and record.get("Version") == version:
             selected = record
     if selected is None:
-        raise ValueError(f"пакет {package} версии {version} не найден в индексе")
+        raise ValueError(f"пакет {package} версии {version} не найден")
     index[package] = selected
     return build_graph(package, lambda node: dependency_names(
         index.get(node, {})

@@ -14,7 +14,8 @@ jobs:
             package=${pair%%=*}
             sh run.sh "examples/$package.xml"
             apt-cache depends --important "$pair"
-            apt-cache --no-recurse dotty "$pair" > "$package.apt.dot"
+            apt-cache -o APT::Cache::GivenOnly=true dotty "$pair" > "$package.apt.dot"
             dot -Tpng "$package.apt.dot" -o "$package.apt.png"
             cat "$package.apt.dot"
           done
+

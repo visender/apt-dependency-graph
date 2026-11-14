@@ -1,0 +1,8 @@
+<config>
+  <package>A</package>
+  <repository>diamond.txt</repository>
+  <test_mode>true</test_mode>
+  <version>1</version>
+  <output>graph.png</output>
+  <ascii>false</ascii>
+</config>

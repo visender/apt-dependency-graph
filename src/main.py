@@ -9,7 +9,8 @@ from urllib.parse import urlsplit
 from xml.etree import ElementTree
 from zlib import error as CompressionError
 
-from apt_index import direct_dependencies, read_index
+from apt_index import read_index
+from graph import apt_graph, build_graph, read_test_graph
 
 FIELDS = ("package", "repository", "test_mode", "version", "output", "ascii")
 FLAGS = ("true", "false")
@@ -84,28 +85,34 @@ def validate_config(config, base):
     validate_repository(config["repository"], test_mode, base)
 
 
+def load_graph(config, base):
+    """Получить граф из тестового файла или индекса Ubuntu."""
+    package = config["package"]
+    if config["test_mode"] == "true":
+        index = read_test_graph(base / config["repository"])
+        if package not in index:
+            raise ValueError(f"пакет {package} не найден в тестовом графе")
+        return build_graph(package, index.__getitem__)
+    return apt_graph(
+        read_index(config["repository"]), package, config["version"]
+    )
+
+
 def main():
-    """Прочитать настройки и вывести прямые зависимости."""
+    """Прочитать настройки и вывести граф зависимостей."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path, help="путь к файлу XML")
     path = parser.parse_args().config
     try:
         config = read_config(path)
         validate_config(config, path.parent)
-        if config["test_mode"] == "true":
-            raise ValueError("тестовый режим появится на этапе 3")
-        text = read_index(config["repository"])
-        dependencies = direct_dependencies(
-            text, config["package"], config["version"]
-        )
+        graph = load_graph(config, path.parent)
     except (OSError, ValueError, ElementTree.ParseError, EOFError,
             lzma.LZMAError, CompressionError) as error:
         print(f"Ошибка: {error}", file=sys.stderr)
         return 1
-    for dependency in dependencies:
-        print(dependency)
-    if not dependencies:
-        print("Прямых зависимостей нет.")
+    for package, dependencies in graph.items():
+        print(f"{package}: {', '.join(dependencies) or '—'}")
     return 0
 
 

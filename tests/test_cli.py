@@ -1,5 +1,6 @@
 """Проверки прототипа через командную строку."""
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -25,7 +26,8 @@ def run_cli(path):
     return subprocess.run(
         [sys.executable, str(ROOT / "src" / "main.py"), str(path)],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         check=False,
     )
 
@@ -34,14 +36,15 @@ class CliTest(unittest.TestCase):
     """Проверки успешного запуска и ошибок XML."""
 
     def test_direct_dependencies(self):
-        """Скачать индекс и вывести зависимости только нужной версии."""
+        """Построить граф из записи с нужной версией корня."""
         with tempfile.TemporaryDirectory() as directory:
             (Path(directory) / "Packages").write_text(INDEX, encoding="utf-8")
             handler = partial(SimpleHTTPRequestHandler, directory=directory)
             result = self.run_server(handler)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), [
-            "shell", "libc6 (>= 2.38)", "editor | vim",
+            "hello: shell, libc6, editor, vim",
+            "shell: —", "libc6: —", "editor: —", "vim: —",
         ])
 
     def run_server(self, handler):
@@ -54,6 +57,12 @@ class CliTest(unittest.TestCase):
             finally:
                 server.shutdown()
                 worker.join()
+
+    def test_cycle(self):
+        """Сохранить ребро цикла и вывести каждую вершину один раз."""
+        result = run_cli(EXAMPLE.with_name("cycle.xml"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ["A: B", "B: C", "C: A"])
 
     def run_with_index(self, port):
         """Подставить адрес локального HTTP-сервера в XML."""

@@ -21,10 +21,10 @@ INDEX = (
 )
 
 
-def run_cli(path):
+def run_cli(path, *options):
     """Запустить программу и вернуть результат."""
     return subprocess.run(
-        [sys.executable, str(ROOT / "src" / "main.py"), str(path)],
+        [sys.executable, str(ROOT / "src" / "main.py"), str(path), *options],
         capture_output=True,
         encoding="utf-8",
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
@@ -34,6 +34,19 @@ def run_cli(path):
 
 class CliTest(unittest.TestCase):
     """Проверки успешного запуска и ошибок XML."""
+
+    def test_reverse_dependencies(self):
+        """Найти обратные связи, учитывая общий узел, цикл и пустой ответ."""
+        cases = {
+            "reverse.xml": "B, A, C",
+            "cycle.xml": "C, B",
+            "chain.xml": "Обратных зависимостей нет.",
+        }
+        for name, expected in cases.items():
+            with self.subTest(name=name):
+                result = run_cli(EXAMPLE.with_name(name), "--reverse")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), expected)
 
     def test_direct_dependencies(self):
         """Построить граф из записи с нужной версией корня."""

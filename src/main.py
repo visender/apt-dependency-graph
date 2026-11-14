@@ -10,7 +10,7 @@ from xml.etree import ElementTree
 from zlib import error as CompressionError
 
 from apt_index import read_index
-from graph import apt_graph, build_graph, read_test_graph
+from graph import apt_graph, build_graph, read_test_graph, reverse_graph
 
 FIELDS = ("package", "repository", "test_mode", "version", "output", "ascii")
 FLAGS = ("true", "false")
@@ -85,16 +85,18 @@ def validate_config(config, base):
     validate_repository(config["repository"], test_mode, base)
 
 
-def load_graph(config, base):
+def load_graph(config, base, reverse=False):
     """Получить граф из тестового файла или индекса Ubuntu."""
     package = config["package"]
     if config["test_mode"] == "true":
         index = read_test_graph(base / config["repository"])
         if package not in index:
             raise ValueError(f"пакет {package} не найден в тестовом графе")
+        if reverse:
+            return reverse_graph(package, index)
         return build_graph(package, index.__getitem__)
     return apt_graph(
-        read_index(config["repository"]), package, config["version"]
+        read_index(config["repository"]), package, config["version"], reverse
     )
 
 
@@ -102,15 +104,23 @@ def main():
     """Прочитать настройки и вывести граф зависимостей."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path, help="путь к файлу XML")
-    path = parser.parse_args().config
+    parser.add_argument(
+        "--reverse", action="store_true", help="вывести обратные зависимости"
+    )
+    args = parser.parse_args()
+    path = args.config
     try:
         config = read_config(path)
         validate_config(config, path.parent)
-        graph = load_graph(config, path.parent)
+        graph = load_graph(config, path.parent, args.reverse)
     except (OSError, ValueError, ElementTree.ParseError, EOFError,
             lzma.LZMAError, CompressionError) as error:
         print(f"Ошибка: {error}", file=sys.stderr)
         return 1
+    if args.reverse:
+        dependents = [node for node in graph if node != config["package"]]
+        print(", ".join(dependents) or "Обратных зависимостей нет.")
+        return 0
     for package, dependencies in graph.items():
         print(f"{package}: {', '.join(dependencies) or '—'}")
     return 0

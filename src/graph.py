@@ -50,7 +50,16 @@ def dependency_names(record):
     return list(names)
 
 
-def apt_graph(text, package, version):
+def reverse_graph(package, graph):
+    """Обойти прямые и транзитивные обратные связи выбранного пакета."""
+    parents = {node: [] for node in graph}
+    for node, children in graph.items():
+        for child in children:
+            parents.setdefault(child, []).append(node)
+    return build_graph(package, parents.__getitem__)
+
+
+def apt_graph(text, package, version, reverse=False):
     """Построить граф с точной версией корня и первым совпадением потомков."""
     index = {}
     selected = None
@@ -63,6 +72,10 @@ def apt_graph(text, package, version):
     if selected is None:
         raise ValueError(f"пакет {package} версии {version} не найден")
     index[package] = selected
+    if reverse:
+        graph = {name: dependency_names(record)
+                 for name, record in index.items()}
+        return reverse_graph(package, graph)
     return build_graph(package, lambda node: dependency_names(
         index.get(node, {})
     ))

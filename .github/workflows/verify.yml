@@ -1,0 +1,20 @@
+name: Проверка в Ubuntu
+on: [push]
+jobs:
+  apt:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Сравнить графы
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y graphviz
+          python3 -m unittest discover -s tests -v
+          for pair in hello=2.10-3build1 sed=4.9-2build1 gzip=1.12-1ubuntu3; do
+            package=${pair%%=*}
+            sh run.sh "examples/$package.xml"
+            apt-cache depends --important "$pair"
+            apt-cache --no-recurse dotty "$pair" > "$package.apt.dot"
+            dot -Tpng "$package.apt.dot" -o "$package.apt.png"
+            cat "$package.apt.dot"
+          done

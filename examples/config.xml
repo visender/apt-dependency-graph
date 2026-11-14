@@ -1,0 +1,8 @@
+<config>
+  <package>hello</package>
+  <repository>https://archive.ubuntu.com/ubuntu/</repository>
+  <test_mode>false</test_mode>
+  <version>2.10-3</version>
+  <output>graph.png</output>
+  <ascii>false</ascii>
+</config>

@@ -1,6 +1,7 @@
 """Проверки прототипа через командную строку."""
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -21,10 +22,11 @@ INDEX = (
 )
 
 
-def run_cli(path, *options):
+def run_cli(path, directory=None):
     """Запустить программу и вернуть результат."""
     return subprocess.run(
-        [sys.executable, str(ROOT / "src" / "main.py"), str(path), *options],
+        [sys.executable, str(ROOT / "src" / "main.py"), str(path)],
+        cwd=directory,
         capture_output=True,
         encoding="utf-8",
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
@@ -35,19 +37,7 @@ def run_cli(path, *options):
 class CliTest(unittest.TestCase):
     """Проверки успешного запуска и ошибок XML."""
 
-    def test_reverse_dependencies(self):
-        """Найти обратные связи, учитывая общий узел, цикл и пустой ответ."""
-        cases = {
-            "reverse.xml": "B, A, C",
-            "cycle.xml": "C, B",
-            "chain.xml": "Обратных зависимостей нет.",
-        }
-        for name, expected in cases.items():
-            with self.subTest(name=name):
-                result = run_cli(EXAMPLE.with_name(name), "--reverse")
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout.strip(), expected)
-
+    @unittest.skipUnless(shutil.which("dot"), "Нужен Graphviz")
     def test_direct_dependencies(self):
         """Построить граф из записи с нужной версией корня."""
         with tempfile.TemporaryDirectory() as directory:
@@ -56,8 +46,7 @@ class CliTest(unittest.TestCase):
             result = self.run_server(handler)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), [
-            "hello: shell, libc6, editor, vim",
-            "shell: —", "libc6: —", "editor: —", "vim: —",
+            "hello", "+-- shell", "+-- libc6", "+-- editor", "+-- vim",
         ])
 
     def run_server(self, handler):
@@ -71,11 +60,22 @@ class CliTest(unittest.TestCase):
                 server.shutdown()
                 worker.join()
 
+    @unittest.skipUnless(shutil.which("dot"), "Нужен Graphviz")
     def test_cycle(self):
-        """Сохранить ребро цикла и вывести каждую вершину один раз."""
-        result = run_cli(EXAMPLE.with_name("cycle.xml"))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.splitlines(), ["A: B", "B: C", "C: A"])
+        """Сохранить диаграмму цикла и закончить вывод дерева."""
+        source = EXAMPLE.with_name("cycle.xml").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.xml"
+            graph = EXAMPLE.with_name("cycle.txt").as_posix()
+            xml = source.replace("cycle.txt", graph)
+            path.write_text(xml.replace(">false<", ">true<"), encoding="utf-8")
+            result = run_cli(path, directory)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("A [*]", result.stdout)
+            png = (path.parent / "graph.png").read_bytes()
+            self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
+            diagram = (path.parent / "graph.mmd").read_text()
+            self.assertIn("n2 --> n0", diagram)
 
     def run_with_index(self, port):
         """Подставить адрес локального HTTP-сервера в XML."""
@@ -86,8 +86,9 @@ class CliTest(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.xml"
+            xml = xml.replace("<ascii>false", "<ascii>true")
             path.write_text(xml, encoding="utf-8")
-            return run_cli(path)
+            return run_cli(path, directory)
 
     def test_invalid_settings(self):
         """Отклонить неверное значение каждого поля."""

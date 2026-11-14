@@ -1,0 +1,8 @@
+<config>
+  <package>hello</package>
+  <repository>https://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz</repository>
+  <test_mode>false</test_mode>
+  <version>2.10-3build1</version>
+  <output>hello.png</output>
+  <ascii>true</ascii>
+</config>

@@ -1,0 +1,8 @@
+<config>
+  <package>sed</package>
+  <repository>https://archive.ubuntu.com/ubuntu/dists/noble/main/binary-amd64/Packages.xz</repository>
+  <test_mode>false</test_mode>
+  <version>4.9-2build1</version>
+  <output>sed.png</output>
+  <ascii>true</ascii>
+</config>

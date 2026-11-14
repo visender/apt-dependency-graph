@@ -11,6 +11,7 @@ from zlib import error as CompressionError
 
 from apt_index import read_index
 from graph import apt_graph, build_graph, read_test_graph, reverse_graph
+from visualize import ascii_tree, save_graph
 
 FIELDS = ("package", "repository", "test_mode", "version", "output", "ascii")
 FLAGS = ("true", "false")
@@ -101,28 +102,23 @@ def load_graph(config, base, reverse=False):
 
 
 def main():
-    """Прочитать настройки и вывести граф зависимостей."""
+    """Прочитать настройки и сохранить диаграмму зависимостей."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path, help="путь к файлу XML")
-    parser.add_argument(
-        "--reverse", action="store_true", help="вывести обратные зависимости"
-    )
     args = parser.parse_args()
     path = args.config
     try:
         config = read_config(path)
         validate_config(config, path.parent)
-        graph = load_graph(config, path.parent, args.reverse)
+        graph = load_graph(config, path.parent)
+        save_graph(graph, config["output"])
     except (OSError, ValueError, ElementTree.ParseError, EOFError,
             lzma.LZMAError, CompressionError) as error:
         print(f"Ошибка: {error}", file=sys.stderr)
         return 1
-    if args.reverse:
-        dependents = [node for node in graph if node != config["package"]]
-        print(", ".join(dependents) or "Обратных зависимостей нет.")
-        return 0
-    for package, dependencies in graph.items():
-        print(f"{package}: {', '.join(dependencies) or '—'}")
+    if config["ascii"] == "true":
+        for line in ascii_tree(config["package"], graph):
+            print(line)
     return 0
 
 

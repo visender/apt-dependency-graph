@@ -37,7 +37,8 @@ py -m unittest discover -s tests -v
 В примере это Ubuntu 24.04 (noble), компонент main, архитектура amd64.
 Программа сама разбирает поля `Package`, `Version`, `Pre-Depends` и
 `Depends`. Для корня выбирается точная версия, для остальных пакетов —
-первая запись в указанном индексе. Все альтернативы включаются в граф.
+старшая версия в индексе, удовлетворяющая ограничению зависимости.
+Каждый вариант группы альтернатив обрабатывается отдельно.
 Пакеты без записи в индексе выводятся как листья. Это граф связей по
 метаданным одного индекса. Он не моделирует выбор пакетов при установке.
 
@@ -84,7 +85,7 @@ sh run.sh examples/gzip.xml
 apt-cache depends --important hello=2.10-3build1
 apt-cache depends --important sed=4.9-2build1
 apt-cache depends --important gzip=1.12-1ubuntu3
-apt-cache -o APT::Cache::GivenOnly=true dotty gzip=1.12-1ubuntu3 > gzip.apt.dot
+apt-cache -o APT::Cache::GivenOnly=true dotty gzip > gzip.apt.dot
 dot -Tpng gzip.apt.dot -o gzip.apt.png
 ```
 
@@ -97,8 +98,20 @@ dot -Tpng gzip.apt.dot -o gzip.apt.png
 | `sed` | PreDepends: libacl1, libc6, libselinux1 |
 | `gzip` | PreDepends: libc6. Depends: dpkg или install-info. |
 
-Apt-cache dotty и Graphviz также создали штатные PNG для всех трёх пакетов.
-В журнале проверки 43626468142 сохранён вывод команд для сравнения.
+В запуске GitHub Actions 43627789430 проверены рёбра от корня в DOT:
+
+| Пакет | Совпадающие рёбра к пакетам | Дополнительные рёбра APT |
+| --- | --- | --- |
+| `hello` | `libc6` | `hello-traditional`, `hello-debhelper` |
+| `sed` | `libacl1`, `libc6`, `libselinux1` | нет |
+| `gzip` | `libc6`, `dpkg`, `install-info` | `zutils` |
+
+Дополнительные рёбра выделены зелёным в DOT и отсутствуют в списке
+обязательных зависимостей `apt-cache depends --important`.
+Для DOT передаётся имя пакета, для `depends` — точная версия из XML.
+Параметр `GivenOnly` ограничивает штатный граф рёбрами от корня.
+Поэтому сравниваются рёбра первого уровня, а транзитивные ветви
+остаются видны в графе программы.
 
 Программа показывает обе альтернативы рёбрами. APT отмечает альтернативы
 как группу и может учитывать виртуальные пакеты и записи из других

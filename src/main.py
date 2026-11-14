@@ -1,11 +1,15 @@
 """Запуск прототипа анализатора зависимостей."""
 
 import argparse
+import lzma
 import re
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 from xml.etree import ElementTree
+from zlib import error as CompressionError
+
+from apt_index import direct_dependencies, read_index
 
 FIELDS = ("package", "repository", "test_mode", "version", "output", "ascii")
 FLAGS = ("true", "false")
@@ -81,18 +85,27 @@ def validate_config(config, base):
 
 
 def main():
-    """Прочитать XML и напечатать настройки."""
+    """Прочитать настройки и вывести прямые зависимости."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path, help="путь к файлу XML")
     path = parser.parse_args().config
     try:
         config = read_config(path)
         validate_config(config, path.parent)
-    except (OSError, ValueError, ElementTree.ParseError) as error:
-        print(f"Ошибка конфигурации: {error}", file=sys.stderr)
+        if config["test_mode"] == "true":
+            raise ValueError("тестовый режим появится на этапе 3")
+        text = read_index(config["repository"])
+        dependencies = direct_dependencies(
+            text, config["package"], config["version"]
+        )
+    except (OSError, ValueError, ElementTree.ParseError, EOFError,
+            lzma.LZMAError, CompressionError) as error:
+        print(f"Ошибка: {error}", file=sys.stderr)
         return 1
-    for name in FIELDS:
-        print(f"{name} = {config[name]}")
+    for dependency in dependencies:
+        print(dependency)
+    if not dependencies:
+        print("Прямых зависимостей нет.")
     return 0
 
 

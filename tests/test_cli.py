@@ -3,11 +3,21 @@
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+from functools import partial
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / "examples" / "config.xml"
+
+
+INDEX = (
+    "Package: hello\nVersion: 1.0\nDepends: old\n\n"
+    "Package: hello\nVersion: 2.10-3build1\nPre-Depends: shell\n"
+    "Depends: libc6 (>= 2.38),\n editor | vim\nRecommends: extra\n"
+)
 
 
 def run_cli(path):
@@ -23,30 +33,53 @@ def run_cli(path):
 class CliTest(unittest.TestCase):
     """Проверки успешного запуска и ошибок XML."""
 
-    def test_valid_config(self):
-        """Вывести все шесть настроек."""
-        result = run_cli(EXAMPLE)
+    def test_direct_dependencies(self):
+        """Скачать индекс и вывести зависимости только нужной версии."""
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "Packages").write_text(INDEX, encoding="utf-8")
+            handler = partial(SimpleHTTPRequestHandler, directory=directory)
+            result = self.run_server(handler)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), [
-            "package = hello",
-            "repository = https://archive.ubuntu.com/ubuntu/",
-            "test_mode = false",
-            "version = 2.10-3",
-            "output = graph.png",
-            "ascii = false",
+            "shell", "libc6 (>= 2.38)", "editor | vim",
         ])
+
+    def run_server(self, handler):
+        """Запустить временный HTTP-сервер для проверки CLI."""
+        with HTTPServer(("127.0.0.1", 0), handler) as server:
+            worker = threading.Thread(target=server.serve_forever)
+            worker.start()
+            try:
+                return self.run_with_index(server.server_port)
+            finally:
+                server.shutdown()
+                worker.join()
+
+    def run_with_index(self, port):
+        """Подставить адрес локального HTTP-сервера в XML."""
+        source = EXAMPLE.read_text(encoding="utf-8")
+        xml = source.replace(
+            source.split("<repository>")[1].split("</repository>")[0],
+            f"http://127.0.0.1:{port}/Packages",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.xml"
+            path.write_text(xml, encoding="utf-8")
+            return run_cli(path)
 
     def test_invalid_settings(self):
         """Отклонить неверное значение каждого поля."""
         invalid = {
             "package": ("hello", "?"),
-            "repository": ("https://archive.ubuntu.com/ubuntu/", "local"),
+            "repository": (None, "local"),
             "test_mode": ("false", "maybe"),
-            "version": ("2.10-3", "unknown"),
+            "version": ("2.10-3build1", "unknown"),
             "output": ("graph.png", "graph.txt"),
             "ascii": ("false", "maybe"),
         }
         source = EXAMPLE.read_text(encoding="utf-8")
+        repository = source.split("<repository>")[1].split("</repository>")[0]
+        invalid["repository"] = (repository, "local")
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "config.xml"
             for name, (valid, wrong) in invalid.items():

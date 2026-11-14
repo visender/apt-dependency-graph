@@ -84,13 +84,22 @@ sh run.sh examples/gzip.xml
 apt-cache depends --important hello=2.10-3build1
 apt-cache depends --important sed=4.9-2build1
 apt-cache depends --important gzip=1.12-1ubuntu3
-apt-cache dotty hello sed gzip > apt-graph.dot
-dot -Tpng apt-graph.dot -o apt-graph.png
+apt-cache -o APT::Cache::GivenOnly=true dotty gzip=1.12-1ubuntu3 > gzip.apt.dot
+dot -Tpng gzip.apt.dot -o gzip.apt.png
 ```
 
-Сравните прямых потомков корня с первой ступенью ASCII-дерева.
-В индексе из примеров у hello есть libc6, у sed — libacl1, libc6 и
-libselinux1, у gzip — libc6 и группа альтернатив dpkg или install-info.
+Проверка в Ubuntu 24.04 через GitHub Actions показала совпадение имён
+прямых зависимостей с первым уровнем ASCII-дерева для всех трёх пакетов.
+
+| Пакет | Вывод APT |
+| --- | --- |
+| `hello` | Depends: libc6 |
+| `sed` | PreDepends: libacl1, libc6, libselinux1 |
+| `gzip` | PreDepends: libc6. Depends: dpkg или install-info. |
+
+Apt-cache dotty и Graphviz также создали штатные PNG для всех трёх пакетов.
+В журнале проверки 43626468142 сохранён вывод команд для сравнения.
+
 Программа показывает обе альтернативы рёбрами. APT отмечает альтернативы
 как группу и может учитывать виртуальные пакеты и записи из других
 компонентов и обновлений. Наш граф ограничен одним индексом.

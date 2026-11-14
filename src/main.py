@@ -11,7 +11,8 @@ FIELDS = ("package", "repository", "test_mode", "version", "output", "ascii")
 FLAGS = ("true", "false")
 INVALID_PORT = 0
 PACKAGE = r"[a-z0-9][a-z0-9+.-]+"
-VERSION = r"(?:[0-9]+:)?[0-9][a-zA-Z0-9.+~:-]*"
+UPSTREAM = r"[0-9][a-zA-Z0-9.+~:-]*"
+REVISION = r"[a-zA-Z0-9.+~]+"
 
 
 def read_config(path):
@@ -26,9 +27,6 @@ def read_config(path):
         if node.attrib or len(node):
             raise ValueError(f"{node.tag}: ожидается текстовое значение")
         config[node.tag] = (node.text or "").strip()
-    for name in FIELDS:
-        if not config.get(name):
-            raise ValueError(f"{name}: требуется значение")
     return config
 
 
@@ -45,12 +43,28 @@ def validate_repository(value, test_mode, base):
         raise ValueError("repository: некорректный URL") from error
     if url.scheme not in ("http", "https") or not url.hostname:
         raise ValueError("repository: нужен URL с http или https")
+    if not url.hostname.rstrip("."):
+        raise ValueError("repository: некорректное имя хоста")
     if any(char.isspace() for char in value) or port == INVALID_PORT:
         raise ValueError("repository: некорректный URL")
 
 
+def valid_version(value):
+    """Проверить эпоху, основную версию и ревизию Debian."""
+    epoch, colon, version = value.partition(":")
+    if colon and not re.fullmatch(r"[0-9]+", epoch):
+        return False
+    upstream, dash, revision = (version if colon else value).rpartition("-")
+    if dash and not re.fullmatch(REVISION, revision):
+        return False
+    return bool(re.fullmatch(UPSTREAM, upstream if dash else revision))
+
+
 def validate_config(config, base):
     """Проверить значения всех настроек."""
+    for name in FIELDS:
+        if not config.get(name):
+            raise ValueError(f"{name}: требуется значение")
     for name in ("test_mode", "ascii"):
         if config[name] not in FLAGS:
             raise ValueError(f"{name}: ожидается true или false")
@@ -58,7 +72,7 @@ def validate_config(config, base):
     pattern = r"[A-Z]" if test_mode else PACKAGE
     if not re.fullmatch(pattern, config["package"]):
         raise ValueError("package: недопустимое имя пакета")
-    if not re.fullmatch(VERSION, config["version"]):
+    if not valid_version(config["version"]):
         raise ValueError("version: недопустимый формат версии")
     output = config["output"]
     if not re.fullmatch(r"[\w.-]+\.png", output, re.IGNORECASE):

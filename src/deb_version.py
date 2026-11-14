@@ -4,6 +4,7 @@ import re
 
 PARTS = re.compile(r"([0-9]+)")
 END = ((0,), 0)
+LAST_PAIR = -1
 RELATIONS = {
     "<<": {-1}, "<=": {-1, 0}, "=": {0}, ">=": {0, 1}, ">>": {1},
 }
@@ -24,7 +25,7 @@ def part_key(value):
     pairs = []
     for letters, digits in zip(pieces[::2], [*pieces[1::2], "0"]):
         pairs.append((tuple(map(order, letters)) + (0,), int(digits or "0")))
-    while pairs and pairs[-1] == END:
+    while pairs and pairs[LAST_PAIR] == END:
         pairs.pop()
     return [*pairs, END]
 
